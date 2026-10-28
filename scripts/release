@@ -1,0 +1,65 @@
+#!/bin/bash
+# Release ttm-sync: tag, push, wait for CI to build the packages, then
+# publish the apt repository right away instead of waiting for its hourly run.
+#
+#   scripts/release            next patch version (v0.1.0 → v0.1.1)
+#   scripts/release minor      v0.1.3 → v0.2.0
+#   scripts/release major      v0.2.0 → v1.0.0
+#   scripts/release 0.4.2      exact version (must be greater than the last one)
+#   scripts/release -n ...     dry run: only print what would be released
+#
+# Runs locally with your gh credentials, so no extra token is needed to trigger
+# tihonove/apt.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+branch=main
+apt=tihonove/apt
+
+die() { echo "release: $*" >&2; exit 1; }
+
+dry=0
+if [[ ${1:-} == -n ]]; then dry=1; shift; fi
+
+[[ $(git branch --show-current) == "$branch" ]] || die "not on $branch"
+[[ -z $(git status --porcelain --untracked-files=no) ]] || die "uncommitted changes"
+git fetch -q origin "$branch" --tags
+git merge-base --is-ancestor "origin/$branch" HEAD || die "behind origin/$branch, pull first"
+
+last=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+last=${last:-v0.0.0}
+IFS=. read -r major minor patch <<<"${last#v}"
+case ${1:-patch} in
+    patch) patch=$((patch + 1)) ;;
+    minor) minor=$((minor + 1)); patch=0 ;;
+    major) major=$((major + 1)); minor=0; patch=0 ;;
+    [0-9]*.[0-9]*.[0-9]*) IFS=. read -r major minor patch <<<"$1" ;;
+    *) die "unknown argument: $1" ;;
+esac
+tag=v$major.$minor.$patch
+
+# apt only upgrades to a greater version, so a release must never go back.
+[[ $tag != "$last" && $(printf '%s\n' "$last" "$tag" | sort -V | tail -1) == "$tag" ]] ||
+    die "$tag is not greater than $last"
+
+echo "$last → $tag ($(git log --oneline "$last..HEAD" 2>/dev/null | wc -l) commits)"
+((dry)) && exit 0
+read -rp "Release $tag? [y/N] " answer
+[[ $answer == [yY]* ]] || exit 1
+
+git push -q origin "$branch"
+git tag -a "$tag" -m "$tag"
+git push -q origin "$tag"
+
+echo "Waiting for the release workflow..."
+for _ in {1..30}; do
+    run=$(gh run list -w release -b "$tag" -L 1 --json databaseId -q '.[0].databaseId')
+    [[ -n $run ]] && break
+    sleep 2
+done
+[[ -n $run ]] || die "release workflow for $tag didn't start"
+gh run watch "$run" --exit-status >/dev/null || die "release workflow failed: $(gh run view "$run" --json url -q .url)"
+
+gh workflow run publish -R "$apt"
+echo "Released $tag: $(gh release view "$tag" --json url -q .url)"
+echo "apt publish started: gh run list -R $apt -w publish -L 1"

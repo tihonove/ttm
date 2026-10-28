@@ -16,7 +16,8 @@
     "test:mutation": "node scripts/mutation-diff.ts",
     "test:mutation:full": "stryker run --incremental",
     "typecheck": "tsc",
-    "build:sea": "node scripts/build-sea.ts"
+    "build:sea": "node scripts/build-sea.ts",
+    "build:deb": "node scripts/build-deb.ts"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^10.1.1",

@@ -26,13 +26,26 @@
 ## Подключить машину
 
 ```bash
-npm ci
-node packages/sync/src/cli.ts init --dir ~/Documents/Notes --server https://ttm.tihonove.dev
+curl -fsSL https://tihonove.github.io/apt/install.sh | sudo sh -s -- ttm-sync
+ttm-sync init --dir ~/Documents/Notes --server https://ttm.tihonove.dev
 # токен сервера → ~/.config/ttm/token (chmod 600)
-node packages/sync/src/cli.ts once      # первый синк руками, посмотреть что всё ок
-node packages/sync/src/cli.ts install   # systemd user unit ttm-sync.service
+ttm-sync once      # первый синк руками, посмотреть что всё ок
+ttm-sync install   # systemd user unit ttm-sync.service
 journalctl --user -u ttm-sync -f
 ```
+
+Обновления — обычный `apt upgrade`: он подменяет бинарь, демон замечает это и перезапускается через systemd.
+Из исходников — то же самое через `node packages/sync/src/cli.ts`.
+
+## Релиз
+
+```bash
+scripts/release          # v0.1.0 → v0.1.1; minor | major | 0.4.2; -n — посмотреть, что выйдет
+```
+
+Скрипт ставит тег `vX.Y.Z`, workflow `release` гоняет тесты, собирает бинари (`npm run build:sea`) и
+`ttm-sync_X.Y.Z_{amd64,arm64}.deb` (`npm run build:deb`) в GitHub Release; потом скрипт запускает
+`publish` в [tihonove/apt](https://github.com/tihonove/apt), и пакет появляется в apt.
 
 ## Разработка
 
