@@ -1,1 +1,1 @@
-{ "name": "@ttm/sync", "private": true, "type": "module", "bin": { "ttm-sync": "src/cli.ts" }, "dependencies": { "@ttm/git": "*" } }
+{"name":"@ttm/sync","private":true,"type":"module","bin":{"ttm-sync":"src/cli.ts"},"dependencies":{"@ttm/git":"*","qrcode":"^1.5.4"}}

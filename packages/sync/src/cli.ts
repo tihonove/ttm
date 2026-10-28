@@ -6,6 +6,7 @@ import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { isSea } from "node:sea";
 import { parseArgs } from "node:util";
+import QRCode from "qrcode";
 import { authEnv, remoteUrl, runDaemon, type DaemonConfig } from "./daemon.ts";
 import { runDriver, THEIRS_REF_ENV } from "./driver.ts";
 import { prepareRepo, setRemote, syncOnce } from "./sync.ts";
@@ -118,6 +119,14 @@ async function mergeDriver(args: string[]): Promise<void> {
     await runDriver({ basePath, oursPath, theirsPath, path, repoDir: process.cwd(), theirsRef: process.env[THEIRS_REF_ENV] });
 }
 
+/** Shows a QR code the mobile app scans to connect: server and token, nothing else. */
+async function pair(): Promise<void> {
+    const config = await loadConfig();
+    const url = `ttm://pair?server=${encodeURIComponent(config.server)}&token=${encodeURIComponent(config.token)}`;
+    console.log(await QRCode.toString(url, { type: "terminal", small: true }));
+    console.log("Scan it in the ttm app: Сканировать QR-код. The code holds the server token — don't share it.");
+}
+
 async function version(): Promise<void> {
     console.log(VERSION);
 }
@@ -127,6 +136,7 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
     once,
     run,
     install,
+    pair,
     "merge-driver": mergeDriver,
     "--version": version,
 };
