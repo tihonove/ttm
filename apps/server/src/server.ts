@@ -31,6 +31,10 @@ class HeadEvents {
             "cache-control": "no-cache",
             "x-accel-buffering": "no",
         });
+        // Over HTTP/2 the ingress held the whole stream back; headers now and a padding comment
+        // push the first bytes through any buffer in between.
+        res.flushHeaders();
+        res.write(`:${" ".repeat(2048)}\n\n`);
         this.clients.add(res);
         res.on("close", () => this.clients.delete(res));
         this.last = await this.repo.head();
