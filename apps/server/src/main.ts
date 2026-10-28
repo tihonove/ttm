@@ -7,7 +7,12 @@ if (!token) {
 }
 
 const { server, port } = await startServer(
-    { repoPath: process.env.TTM_REPO ?? "/data/repos/notes.git", token, log: console.error },
+    {
+        repoPath: process.env.TTM_REPO ?? "/data/repos/notes.git",
+        token,
+        todoFiles: process.env.TTM_TODO_FILES?.split(",").map(f => f.trim()).filter(Boolean),
+        log: console.error,
+    },
     Number(process.env.PORT ?? 8080),
 );
 console.error(`ttm server listening on :${port}`);

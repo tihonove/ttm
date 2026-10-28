@@ -2,14 +2,27 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 import { dirname, posix } from "node:path";
 import { serveGitHttp } from "./git-http.ts";
+import { parse, type TodoNode } from "@ttm/parser/parse";
 import { NotesRepo } from "./repo.ts";
 
 export interface ServerOptions {
     /** Path of the bare notes repository; its parent is served over git HTTP. */
     repoPath: string;
     token: string;
+    /** Notes files the todo list is built from, repo-relative. */
+    todoFiles?: string[];
     log?: (message: string) => void;
 }
+
+export const DEFAULT_TODO_FILES = ["Diode.md", "NebiusNow.md", "Home.md"];
+
+/** Any origin may call the API: auth is a bearer token, never a cookie. */
+const CORS_HEADERS = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-methods": "GET, PUT, OPTIONS",
+    "access-control-expose-headers": "x-commit",
+};
 
 const REPO_NAME = "notes.git";
 const HEARTBEAT_MS = 20_000;
@@ -111,7 +124,9 @@ export async function startServer(options: ServerOptions, port: number): Promise
 
     const server = createServer(async (req, res) => {
         const url = new URL(req.url ?? "/", "http://localhost");
+        for (const [name, value] of Object.entries(CORS_HEADERS)) res.setHeader(name, value);
         try {
+            if (req.method === "OPTIONS") return void res.writeHead(204).end();
             if (url.pathname === "/healthz") return void res.writeHead(200).end("ok\n");
             if (!isAuthorized(req, options.token)) {
                 return void res.writeHead(401, { "www-authenticate": 'Basic realm="ttm"' }).end();
@@ -133,6 +148,18 @@ export async function startServer(options: ServerOptions, port: number): Promise
             if (url.pathname === "/api/files" && req.method === "GET") {
                 const head = await repo.head();
                 return json(res, 200, { head: head ?? null, files: await repo.listFiles(head) });
+            }
+
+            if (url.pathname === "/api/todos" && req.method === "GET") {
+                const head = await repo.head();
+                const files = [];
+                for (const path of options.todoFiles ?? DEFAULT_TODO_FILES) {
+                    const content = await repo.readFile(path, head);
+                    if (!content) continue;
+                    const nodes: TodoNode[] = parse(content.toString("utf8")).nodes.filter(n => n.kind !== "blank");
+                    files.push({ path, nodes });
+                }
+                return json(res, 200, { head: head ?? null, files });
             }
 
             if (url.pathname === "/api/file") {

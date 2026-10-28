@@ -1,1 +1,1 @@
-{ "name": "@ttm/server", "private": true, "type": "module", "dependencies": { "@ttm/git": "*" } }
+{ "name": "@ttm/server", "private": true, "type": "module", "dependencies": { "@ttm/git": "*", "@ttm/parser": "*" } }

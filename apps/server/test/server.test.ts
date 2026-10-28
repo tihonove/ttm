@@ -32,7 +32,10 @@ describe("server with sync daemons", () => {
 
     beforeAll(async () => {
         root = await mkdtemp(join(tmpdir(), "ttm-server-test-"));
-        const started = await startServer({ repoPath: join(root, "repos", "notes.git"), token: TOKEN }, 0);
+        const started = await startServer(
+            { repoPath: join(root, "repos", "notes.git"), token: TOKEN, todoFiles: ["Diode.md", "NebiusNow.md", "Home.md"] },
+            0,
+        );
         server = started.server;
         url = `http://127.0.0.1:${started.port}`;
         for (const host of ["laptop", "desktop"]) {
@@ -89,6 +92,33 @@ describe("server with sync daemons", () => {
             const content = await readFile(join(dirs[host]!, "Home.md"), "utf8");
             assert.equal(content, "NOW:\n+ buy milk\n- call mom\n");
         }
+    });
+
+    it("lists todos from the todo files, parsed", async () => {
+        await writeFile(join(dirs.laptop!, "NebiusNow.md"), "NOW:\n- open task\n  + done child\n\nfree text\n");
+        await waitFor(async () => {
+            const response = await fetch(`${url}/api/file?path=NebiusNow.md`, { headers: { authorization: `Bearer ${TOKEN}` } });
+            return response.ok;
+        });
+        const response = await fetch(`${url}/api/todos`, { headers: { authorization: `Bearer ${TOKEN}` } });
+        const body = (await response.json()) as { files: { path: string; nodes: { kind: string; text?: string }[] }[] };
+        // Only configured todo files, in configured order; files missing from the repo are skipped.
+        assert.deepEqual(body.files.map(f => f.path), ["NebiusNow.md", "Home.md"]);
+        assert.deepEqual(body.files[0]!.nodes.map(n => [n.kind, n.text]), [
+            ["section", undefined],
+            ["task", "open task"],
+            ["task", "done child"],
+            ["text", "free text"],
+        ]);
+    });
+
+    it("answers CORS preflight without a token and marks responses for any origin", async () => {
+        const preflight = await fetch(`${url}/api/todos`, { method: "OPTIONS" });
+        assert.equal(preflight.status, 204);
+        assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
+        assert.match(preflight.headers.get("access-control-allow-headers") ?? "", /authorization/);
+        const file = await fetch(`${url}/api/file?path=Home.md`, { headers: { authorization: `Bearer ${TOKEN}` } });
+        assert.equal(file.headers.get("access-control-expose-headers"), "x-commit");
     });
 
     it("refuses paths outside the repo", async () => {

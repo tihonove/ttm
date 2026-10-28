@@ -7,7 +7,7 @@ export default defineConfig({
     resolve: {
         // Workspace packages resolve to sources next to this config, not via node_modules symlinks:
         // inside Stryker's sandbox the symlinks would point at the original, unmutated files.
-        alias: [{ find: /^@ttm\/git\/(.*)$/, replacement: `${root}packages/git/src/$1.ts` }],
+        alias: [{ find: /^@ttm\/(git|parser)\/(.*)$/, replacement: `${root}packages/$1/src/$2.ts` }],
     },
     test: {
         include: ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.test.ts", "scripts/**/*.test.ts"],
