@@ -51,7 +51,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "mobile-${{ github.run_number }}" ttm.apk \
+          # Not "latest": tihonove/apt takes the latest release of this repo for the ttm-sync debs.
+          gh release create "mobile-${{ github.run_number }}" ttm.apk --latest=false \
             --title "ttm mobile #${{ github.run_number }}" \
             --notes "Android APK built from ${GITHUB_SHA::7}." \
             --target "$GITHUB_SHA"
