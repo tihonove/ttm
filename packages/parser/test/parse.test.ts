@@ -87,8 +87,10 @@ describe("parse", () => {
 
 // The real notes never go into this public repo; the check runs where they exist.
 const notes = join(homedir(), "Documents", "Notes");
-describe.skipIf(!existsSync(notes))("parse on the real notes", () => {
-    for (const name of readdirSync(notes).filter(f => /\.(md|todo)$/.test(f))) {
+// skipIf still runs the describe body, so the listing itself must not touch a missing folder.
+const noteFiles = existsSync(notes) ? readdirSync(notes).filter(f => /\.(md|todo)$/.test(f)) : [];
+describe.skipIf(noteFiles.length === 0)("parse on the real notes", () => {
+    for (const name of noteFiles) {
         it(`round-trips ${name} and sees every line`, () => {
             const source = readFileSync(join(notes, name), "utf8");
             const doc = parse(source);
