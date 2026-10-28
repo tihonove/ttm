@@ -9,4 +9,4 @@ resources:
 images:
   - name: app
     newName: ghcr.io/tihonove/ttm
-    newTag: dev
+    newTag: 8d72109
