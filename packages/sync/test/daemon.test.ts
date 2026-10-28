@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 import assert from "node:assert/strict";
-import { isNetworkError } from "../src/daemon.ts";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { followServerEvents, isNetworkError } from "../src/daemon.ts";
 
 describe("isNetworkError", () => {
     it("recognizes being offline or a restarting server", () => {
@@ -22,6 +24,33 @@ describe("isNetworkError", () => {
             "a rebase is in progress in the notes repo; finish or abort it by hand",
         ]) {
             assert.equal(isNetworkError(new Error(message)), false, message);
+        }
+    });
+});
+
+describe("followServerEvents", () => {
+    it("reconnects when a request hangs before any response", async () => {
+        let requests = 0;
+        const server = createServer((_req, res) => {
+            // The first request is accepted and never answered, like an ingress during a redeploy.
+            if (++requests === 1) return;
+            res.writeHead(200, { "content-type": "text/event-stream" });
+            res.write(`event: head\ndata: {"head":"abc"}\n\n`);
+        });
+        await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+        const { port } = server.address() as AddressInfo;
+        const stop = new AbortController();
+        try {
+            const head = await new Promise<string | null>(resolve => {
+                const config = { dir: "", host: "", server: `http://127.0.0.1:${port}`, token: "t" };
+                void followServerEvents(config, resolve, stop.signal, () => {}, 200);
+            });
+            assert.equal(head, "abc");
+            assert.equal(requests, 2);
+        } finally {
+            stop.abort();
+            server.closeAllConnections();
+            server.close();
         }
     });
 });

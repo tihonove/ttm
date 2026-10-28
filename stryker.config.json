@@ -9,7 +9,6 @@
     "packages/*/src/**/*.ts",
     "apps/*/src/**/*.ts",
     "!packages/sync/src/cli.ts",
-    "!packages/sync/src/driver-main.ts",
     "!apps/server/src/main.ts"
   ],
   "coverageAnalysis": "perTest",

@@ -1,5 +1,5 @@
 // Merge driver logic: writes the result into %A without conflict markers, so a sync merge never
-// stops and waits for a human. The process git spawns is driver-main.ts.
+// stops and waits for a human. git runs it as `ttm-sync merge-driver`.
 import { readFile, writeFile } from "node:fs/promises";
 import { gitRaw } from "@ttm/git/git";
 import { isMergeableText, mergeText } from "@ttm/git/merge";

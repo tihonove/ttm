@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { watch } from "node:fs";
+import http, { type IncomingMessage } from "node:http";
+import https from "node:https";
 import { basename } from "node:path";
 import { configEnv, resolveRef } from "@ttm/git/git";
 import { syncOnce, type SyncTarget } from "./sync.ts";
@@ -53,6 +55,7 @@ function notify(summary: string, body: string): void {
 /** Runs one sync at a time; requests that arrive meanwhile collapse into a single follow-up. */
 class SyncScheduler {
     private running = false;
+    private current: Promise<void> | undefined;
     private rerun = false;
     private timer: NodeJS.Timeout | undefined;
     private firstRequestAt: number | undefined;
@@ -80,24 +83,30 @@ class SyncScheduler {
         this.schedule(0);
     }
 
-    stop(): void {
+    /** Stops scheduling and resolves once a sync in progress has finished. */
+    async stop(): Promise<void> {
         this.stopped = true;
         clearTimeout(this.timer);
+        await this.current;
     }
 
     private schedule(delay: number): void {
         if (this.stopped) return;
         clearTimeout(this.timer);
-        this.timer = setTimeout(() => void this.run(), delay);
+        this.timer = setTimeout(() => this.run(), delay);
     }
 
-    private async run(): Promise<void> {
+    private run(): void {
         this.timer = undefined;
         this.firstRequestAt = undefined;
         if (this.running) {
             this.rerun = true;
             return;
         }
+        this.current = this.execute();
+    }
+
+    private async execute(): Promise<void> {
         this.running = true;
         try {
             const result = await syncOnce(this.target);
@@ -128,36 +137,56 @@ class SyncScheduler {
     }
 }
 
+/**
+ * Opens the server's event stream on a fresh HTTP/1.1 connection. Not fetch: over HTTP/2 the
+ * ingress held the stream back, and after a failed request fetch reused a stuck pooled connection.
+ */
+function openEvents(config: DaemonConfig, signal: AbortSignal): Promise<IncomingMessage> {
+    const url = new URL(`${config.server.replace(/\/+$/, "")}/events`);
+    const client = url.protocol === "https:" ? https : http;
+    return new Promise((resolve, reject) => {
+        const request = client.get(url, {
+            headers: { authorization: `Bearer ${config.token}`, accept: "text/event-stream" },
+            agent: false,
+            signal,
+        });
+        request.on("response", response => {
+            if (response.statusCode === 200) return resolve(response);
+            response.resume();
+            reject(new Error(`events: HTTP ${response.statusCode}`));
+        });
+        request.on("error", reject);
+    });
+}
+
 /** Listens to the server's head events and asks for a sync when the branch moves elsewhere. */
-async function followServerEvents(
+export async function followServerEvents(
     config: DaemonConfig,
     onHead: (head: string | null) => void,
     signal: AbortSignal,
     log: (message: string) => void,
+    staleMs = EVENTS_STALE_MS,
 ): Promise<void> {
-    let backoff = 1_000;
+    let backoff = Math.min(1_000, staleMs);
     while (!signal.aborted) {
         const connection = new AbortController();
         const abort = () => connection.abort();
         signal.addEventListener("abort", abort);
         let stale: NodeJS.Timeout | undefined;
+        // Armed before the request too: a connection can hang before any response arrives.
         const alive = () => {
             clearTimeout(stale);
-            stale = setTimeout(abort, EVENTS_STALE_MS);
+            stale = setTimeout(abort, staleMs);
         };
+        alive();
         try {
-            const response = await fetch(`${config.server.replace(/\/+$/, "")}/events`, {
-                headers: { authorization: `Bearer ${config.token}`, accept: "text/event-stream" },
-                signal: connection.signal,
-            });
-            if (!response.ok || !response.body) throw new Error(`events: HTTP ${response.status}`);
-            backoff = 1_000;
-            alive();
-            const decoder = new TextDecoder();
+            const response = await openEvents(config, connection.signal);
+            backoff = Math.min(1_000, staleMs);
+            response.setEncoding("utf8");
             let buffer = "";
-            for await (const chunk of response.body) {
+            for await (const chunk of response) {
                 alive();
-                buffer += decoder.decode(chunk, { stream: true });
+                buffer += chunk as string;
                 let end: number;
                 while ((end = buffer.indexOf("\n\n")) >= 0) {
                     const message = buffer.slice(0, end);
@@ -166,6 +195,7 @@ async function followServerEvents(
                     if (message.includes("event: head") && data) onHead(JSON.parse(data.slice(5)).head);
                 }
             }
+            throw new Error("events: stream ended");
         } catch (error) {
             if (!signal.aborted) log(`events stream lost: ${error}`);
         } finally {
@@ -178,8 +208,12 @@ async function followServerEvents(
     }
 }
 
-export function runDaemon(config: DaemonConfig, log: (message: string) => void = console.error): () => void {
-    const target: SyncTarget = { dir: config.dir, host: config.host, networkEnv: authEnv(config.token), log };
+export function runDaemon(
+    config: DaemonConfig,
+    log: (message: string) => void = console.error,
+    driverCommand?: string,
+): () => Promise<void> {
+    const target: SyncTarget = { dir: config.dir, host: config.host, networkEnv: authEnv(config.token), log, driverCommand };
     const scheduler = new SyncScheduler(target, log);
     const stop = new AbortController();
 
@@ -205,10 +239,10 @@ export function runDaemon(config: DaemonConfig, log: (message: string) => void =
     scheduler.now();
     log(`ttm-sync watching ${config.dir} as ${config.host}, server ${config.server}`);
 
-    return () => {
+    return async () => {
         stop.abort();
         watcher.close();
         clearInterval(periodic);
-        scheduler.stop();
+        await scheduler.stop();
     };
 }

@@ -14,6 +14,11 @@ export interface SyncTarget {
     /** Extra env for network operations (fetch/push), e.g. an auth header. */
     networkEnv?: NodeJS.ProcessEnv;
     log?: (message: string) => void;
+    /**
+     * Shell command git runs as the merge driver, without the `%O %A %B %P` arguments.
+     * Defaults to this checkout's CLI under the current node (development and tests).
+     */
+    driverCommand?: string;
 }
 
 export interface SyncResult {
@@ -25,7 +30,12 @@ export interface SyncResult {
 
 const REMOTE = "origin";
 const MAX_PUSH_ATTEMPTS = 5;
-const DRIVER_PATH = fileURLToPath(new URL("./driver-main.ts", import.meta.url));
+
+/** Lazy: a bundled binary has no import.meta.url and always passes its own driverCommand. */
+function defaultDriverCommand(): string {
+    const cli = fileURLToPath(new URL("./cli.ts", import.meta.url));
+    return `${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} merge-driver`;
+}
 
 // Both live in .git/info, not in the notes themselves: same effect, nothing extra in the folder.
 export const ATTRIBUTES = "* merge=ttm\n";
@@ -51,7 +61,7 @@ export async function prepareRepo(target: SyncTarget): Promise<void> {
     if (!existsSync(join(dir, ".git"))) await git(dir, ["init", "-q", "-b", branchOf(target)]);
     const config: [string, string][] = [
         ["merge.ttm.name", "ttm sync merge (never conflicts)"],
-        ["merge.ttm.driver", `node ${JSON.stringify(DRIVER_PATH)} %O %A %B %P`],
+        ["merge.ttm.driver", `${target.driverCommand ?? defaultDriverCommand()} %O %A %B %P`],
         ["user.name", `ttm-sync@${target.host}`],
         ["user.email", `ttm-sync@${target.host}`],
         ["core.quotePath", "false"],

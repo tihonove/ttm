@@ -31,7 +31,6 @@ export default defineConfig({
             exclude: [
                 // Process entry points: argv/signals/exit only, the logic they call is tested directly.
                 "packages/sync/src/cli.ts",
-                "packages/sync/src/driver-main.ts",
                 "apps/server/src/main.ts",
             ],
         },
