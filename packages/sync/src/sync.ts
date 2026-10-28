@@ -56,6 +56,10 @@ export async function prepareRepo(target: SyncTarget): Promise<void> {
         ["user.email", `ttm-sync@${target.host}`],
         ["core.quotePath", "false"],
         ["pull.rebase", "false"],
+        // The user's global git config must not change how syncing behaves.
+        ["merge.ff", "true"],
+        ["rerere.enabled", "false"],
+        ["commit.gpgSign", "false"],
     ];
     for (const [key, value] of config) await git(dir, ["config", key, value]);
     const info = join(dir, ".git", "info");

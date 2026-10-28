@@ -50,6 +50,25 @@ describe("syncOnce", () => {
         }
     });
 
+    it("fast-forwards when only the other side changed, even with merge.ff=no globally", async () => {
+        const { root, machines: { a, b }, cleanup } = await makeWorld(["a", "b"]);
+        try {
+            const globalConfig = join(root, "global.gitconfig");
+            await writeFile(globalConfig, "[merge]\n\tff = no\n");
+            process.env.GIT_CONFIG_GLOBAL = globalConfig;
+            await write(a!, "Home.md", "- one\n");
+            await syncOnce(a!);
+            await syncOnce(b!);
+            await write(a!, "Home.md", "- one\n- two\n");
+            await syncOnce(a!);
+            await syncOnce(b!);
+            assert.equal(await git(b!.dir, ["rev-parse", "HEAD"]), await git(a!.dir, ["rev-parse", "HEAD"]));
+        } finally {
+            delete process.env.GIT_CONFIG_GLOBAL;
+            await cleanup();
+        }
+    });
+
     it("merges edits of the same line from two machines without markers, keeping both", async () => {
         const { machines: { a, b }, cleanup } = await makeWorld(["a", "b"]);
         try {
