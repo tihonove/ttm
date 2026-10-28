@@ -154,7 +154,9 @@ export async function startServer(options: ServerOptions, port: number): Promise
             if (url.pathname === "/healthz") return void res.writeHead(200).end("ok\n");
 
             // Public: the app's code is public anyway, and updates are verified by their signature.
-            if (url.pathname === "/updates/manifest" && req.method === "GET") {
+            // HEAD is answered like GET (Node drops the body): download managers ask it for the size.
+            const read = req.method === "GET" || req.method === "HEAD";
+            if (url.pathname === "/updates/manifest" && read) {
                 const response = manifestResponse(
                     update,
                     {
@@ -167,17 +169,17 @@ export async function startServer(options: ServerOptions, port: number): Promise
                 );
                 return void res.writeHead(response.status, response.headers).end(response.body);
             }
-            if (url.pathname.startsWith("/updates/assets/") && req.method === "GET") {
+            if (url.pathname.startsWith("/updates/assets/") && read) {
                 const asset = findAsset(update, decodeURIComponent(url.pathname.slice("/updates/assets/".length)));
                 if (!asset || !options.updatesDir) return json(res, 404, { error: "not found" });
                 res.writeHead(200, { "content-type": asset.contentType, "cache-control": "public, max-age=31536000, immutable" });
                 return void createReadStream(join(options.updatesDir, asset.path)).pipe(res);
             }
-            if (url.pathname === "/app" && req.method === "GET") {
+            if (url.pathname === "/app" && read) {
                 res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
                 return void res.end(appPage({ apkSize: apk?.size, update }));
             }
-            if (url.pathname === `/app/${APK_NAME}` && req.method === "GET") {
+            if (url.pathname === `/app/${APK_NAME}` && read) {
                 if (!apk) return json(res, 404, { error: "no APK in this build" });
                 res.writeHead(200, {
                     "content-type": "application/vnd.android.package-archive",

@@ -199,6 +199,9 @@ describe("server: updates and the APK page", () => {
         assert.equal(apk.headers.get("content-type"), "application/vnd.android.package-archive");
         assert.match(apk.headers.get("content-disposition") ?? "", /ttm\.apk/);
         assert.equal(await apk.text(), "apk bytes");
+        const head = await fetch(`${url}/app/ttm.apk`, { method: "HEAD" });
+        assert.equal(head.status, 200);
+        assert.equal(head.headers.get("content-length"), String("apk bytes".length));
     });
 
     it("keeps the notes API behind the token", async () => {
