@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   apk:
@@ -47,12 +47,10 @@ jobs:
             --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD \
             --out ttm.apk apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           "$build_tools/apksigner" verify --print-certs ttm.apk | head -3
-      - name: Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Not "latest": tihonove/apt takes the latest release of this repo for the ttm-sync debs.
-          gh release create "mobile-${{ github.run_number }}" ttm.apk --latest=false \
-            --title "ttm mobile #${{ github.run_number }}" \
-            --notes "Android APK built from ${GITHUB_SHA::7}." \
-            --target "$GITHUB_SHA"
+      # An artifact, not a release: GITHUB_TOKEN may not tag a commit that changes workflows,
+      # and a release would also compete with the ttm-sync debs that tihonove/apt picks up.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ttm-apk-${{ github.run_number }}
+          path: ttm.apk
+          retention-days: 30
