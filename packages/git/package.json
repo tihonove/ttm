@@ -1,0 +1,1 @@
+{ "name": "@ttm/git", "private": true, "type": "module", "exports": { "./*": "./src/*.ts" } }

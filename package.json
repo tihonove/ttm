@@ -1,0 +1,28 @@
+{
+  "name": "ttm",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:mutation": "node scripts/mutation-diff.ts",
+    "test:mutation:full": "stryker run --incremental",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/vitest-runner": "^10.1.1",
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^4.1.12",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.12"
+  }
+}

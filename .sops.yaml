@@ -1,0 +1,5 @@
+creation_rules:
+  - path_regex: \.enc\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age1xmhxny0fm0vnjm97y9cueagg9lyq5py0te7th07rasgupeksn9rqpkrf02
+    pgp: C2C6B4D22AB169FB33DDA0178EB4481E199BE7B4

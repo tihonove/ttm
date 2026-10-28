@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  # One writer at a time on the node-local volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: web
+          image: app
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: ttm-secrets
+          volumeMounts:
+            - name: repos
+              mountPath: /data/repos
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 384Mi
+      volumes:
+        - name: repos
+          persistentVolumeClaim:
+            claimName: repos
