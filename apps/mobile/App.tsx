@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, fetchTodos } from "./src/api.ts";
+import { useAppUpdate } from "./src/appUpdate.ts";
 import { buildSections, countOpen, parsePairing, type Filter, type Row, type TodosResponse } from "./src/model.ts";
 import { clearSettings, DEFAULT_SERVER, loadSettings, saveSettings, type Settings } from "./src/settings.ts";
 
@@ -162,6 +163,7 @@ function TodoScreen({ palette, settings, onSignOut }: { palette: Palette; settin
     const [refreshing, setRefreshing] = useState(false);
     const [filter, setFilter] = useState<Filter>("open");
     const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+    const appUpdate = useAppUpdate();
 
     const load = useCallback(async () => {
         setRefreshing(true);
@@ -180,10 +182,12 @@ function TodoScreen({ palette, settings, onSignOut }: { palette: Palette; settin
         void load();
         // Coming back to the app is when fresh data matters most.
         const subscription = AppState.addEventListener("change", state => {
-            if (state === "active") void load();
+            if (state !== "active") return;
+            void load();
+            void appUpdate.check();
         });
         return () => subscription.remove();
-    }, [load]);
+    }, [load, appUpdate.check]);
 
     const sections = useMemo(() => (todos ? buildSections(todos, filter) : []), [todos, filter]);
     const open = countOpen(sections);
@@ -200,6 +204,11 @@ function TodoScreen({ palette, settings, onSignOut }: { palette: Palette; settin
                 </View>
                 <Segmented palette={palette} value={filter} onChange={setFilter} />
             </View>
+            {appUpdate.pending && (
+                <Pressable onPress={() => void appUpdate.apply()} style={[styles.banner, { backgroundColor: palette.surface }]}>
+                    <Text style={{ color: palette.accent }}>Новая версия приложения скачана · перезапустить</Text>
+                </Pressable>
+            )}
             {error && (
                 <Pressable onPress={() => void load()} style={[styles.banner, { backgroundColor: palette.surface }]}>
                     <Text style={{ color: palette.danger }}>{error} · повторить</Text>
@@ -227,6 +236,7 @@ function TodoScreen({ palette, settings, onSignOut }: { palette: Palette; settin
                             {settings.server.replace(/^https?:\/\//, "")}
                             {todos?.head ? ` @ ${todos.head.slice(0, 7)}` : ""} · отключиться
                         </Text>
+                        <Text style={{ color: palette.muted, marginTop: 4, fontSize: 12 }}>{appUpdate.label}</Text>
                     </Pressable>
                 }
             />

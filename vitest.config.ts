@@ -34,6 +34,10 @@ export default defineConfig({
                 "packages/sync/src/cli.ts",
                 "apps/server/src/main.ts",
                 "apps/mobile/src/**/*.tsx",
+                // Thin wrappers over native modules (keystore, expo-updates) and fetch.
+                "apps/mobile/src/api.ts",
+                "apps/mobile/src/settings.ts",
+                "apps/mobile/src/appUpdate.ts",
             ],
         },
     },

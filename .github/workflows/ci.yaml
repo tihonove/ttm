@@ -5,10 +5,13 @@ on:
     branches: [main]
     paths-ignore: ["deploy/kustomization.yaml"]
   pull_request:
+  # The mobile workflow calls this after a new APK, so the server starts serving it.
+  workflow_dispatch:
 
 permissions:
   contents: write
   packages: write
+  actions: read
 
 jobs:
   test:
@@ -58,10 +61,49 @@ jobs:
 
   image:
     needs: test
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # Deploys commit to main one at a time.
+    concurrency: deploy
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the update's createdAt is the last commit touching the app.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      # The app's JS for over-the-air updates goes into the image; see apps/server/src/updates.ts.
+      - name: Export app update
+        working-directory: apps/mobile
+        run: |
+          npx expo export --platform android --output-dir ../../build/updates
+          # createdAt follows the app's sources, so a rebuild without app changes is the same update.
+          node -e '
+            const { execSync } = require("child_process");
+            const fs = require("fs");
+            const app = JSON.parse(fs.readFileSync("app.json", "utf8")).expo;
+            const createdAt = execSync("git log -1 --format=%cI -- . ../../packages/parser", { encoding: "utf8" }).trim();
+            const expoClient = JSON.parse(execSync("npx expo config --type public --json", { encoding: "utf8" }));
+            fs.writeFileSync("../../build/updates/update.json", JSON.stringify({
+              runtimeVersion: app.runtimeVersion,
+              createdAt: new Date(createdAt).toISOString(),
+              expoClient,
+            }));
+          '
+      # The latest APK the mobile workflow built, offered for download at /app.
+      - name: Fetch APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p build/app
+          run=$(gh run list --workflow mobile --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')
+          if [ -n "$run" ]; then
+            gh run download "$run" -D "$RUNNER_TEMP/apk"
+            find "$RUNNER_TEMP/apk" -name ttm.apk -exec cp {} build/app/ttm.apk \;
+          fi
+          ls -la build/app build/updates
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -69,8 +111,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The run number makes a rebuild of the same commit (new APK) a new tag, hence a rollout.
       - id: tag
-        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=$(git rev-parse --short HEAD)-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -80,8 +123,9 @@ jobs:
       # Committing the new tag is the deploy: Flux picks it up within a minute.
       - name: Deploy
         run: |
-          sed -i "s/newTag: .*/newTag: ${{ steps.tag.outputs.tag }}/" deploy/kustomization.yaml
           git config user.name github-actions
           git config user.email github-actions@users.noreply.github.com
+          git pull -q --rebase origin main
+          sed -i "s/newTag: .*/newTag: ${{ steps.tag.outputs.tag }}/" deploy/kustomization.yaml
           git commit -am "deploy: ${{ steps.tag.outputs.tag }}"
-          git push
+          git push origin HEAD:main

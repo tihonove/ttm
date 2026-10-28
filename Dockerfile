@@ -5,6 +5,8 @@ COPY package.json ./
 COPY packages/git packages/git
 COPY packages/parser packages/parser
 COPY apps/server apps/server
+# Prepared by CI (ci.yaml, job image): the app's JS update and the APK. Locally: mkdir -p build.
+COPY build build
 # The server has no third-party dependencies; only the workspace link is needed.
 RUN mkdir -p node_modules/@ttm && ln -s ../../packages/git node_modules/@ttm/git && ln -s ../../packages/parser node_modules/@ttm/parser
 USER node

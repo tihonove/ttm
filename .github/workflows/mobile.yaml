@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   apk:
@@ -33,7 +34,8 @@ jobs:
           '
           npx expo prebuild --platform android --no-install
       - working-directory: apps/mobile/android
-        run: ./gradlew assembleRelease --no-daemon
+        # arm64 only: every phone in use is arm64, and the APK is a third of the universal size.
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
       # Re-signed with the app's own key: the template signs release builds with a throwaway
       # debug key, which would differ every run and block updates.
       - name: Sign
@@ -54,3 +56,8 @@ jobs:
           name: ttm-apk-${{ github.run_number }}
           path: ttm.apk
           retention-days: 30
+      # The server image carries the APK for download; rebuild it with this one.
+      - name: Ship the APK with the server
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yaml --ref main

@@ -1,9 +1,12 @@
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
-import { dirname, posix } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { serveGitHttp } from "./git-http.ts";
 import { parse, type TodoNode } from "@ttm/parser/parse";
 import { NotesRepo } from "./repo.ts";
+import { appPage, APK_NAME } from "./app-page.ts";
+import { findAsset, loadUpdate, manifestResponse } from "./updates.ts";
 
 export interface ServerOptions {
     /** Path of the bare notes repository; its parent is served over git HTTP. */
@@ -11,6 +14,12 @@ export interface ServerOptions {
     token: string;
     /** Notes files the todo list is built from, repo-relative. */
     todoFiles?: string[];
+    /** `expo export` of the app plus update.json, baked into the image. */
+    updatesDir?: string;
+    /** PEM key that signs update manifests; the app holds the matching certificate. */
+    updatesPrivateKey?: string;
+    /** Directory with the current ttm.apk for download. */
+    appDir?: string;
     log?: (message: string) => void;
 }
 
@@ -111,6 +120,17 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
     return Buffer.concat(chunks);
 }
 
+function header(req: IncomingMessage, name: string): string | undefined {
+    const value = req.headers[name];
+    return Array.isArray(value) ? value[0] : value;
+}
+
+/** Origin as the client sees it: TLS ends at the ingress, which says so in x-forwarded-proto. */
+function publicOrigin(req: IncomingMessage): string {
+    const proto = header(req, "x-forwarded-proto")?.split(",")[0]?.trim() ?? "http";
+    return `${proto}://${header(req, "host") ?? "localhost"}`;
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
     res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
@@ -120,6 +140,10 @@ export async function startServer(options: ServerOptions, port: number): Promise
     const repo = new NotesRepo(options.repoPath);
     await repo.init();
     const events = new HeadEvents(repo);
+    // The update and the APK ship inside the image and never change while the server runs.
+    const update = options.updatesDir ? await loadUpdate(options.updatesDir) : undefined;
+    const apkPath = options.appDir ? join(options.appDir, APK_NAME) : undefined;
+    const apk = apkPath && existsSync(apkPath) ? { path: apkPath, size: statSync(apkPath).size } : undefined;
     const heartbeat = setInterval(() => events.heartbeat(), HEARTBEAT_MS);
 
     const server = createServer(async (req, res) => {
@@ -128,6 +152,42 @@ export async function startServer(options: ServerOptions, port: number): Promise
         try {
             if (req.method === "OPTIONS") return void res.writeHead(204).end();
             if (url.pathname === "/healthz") return void res.writeHead(200).end("ok\n");
+
+            // Public: the app's code is public anyway, and updates are verified by their signature.
+            if (url.pathname === "/updates/manifest" && req.method === "GET") {
+                const response = manifestResponse(
+                    update,
+                    {
+                        platform: header(req, "expo-platform"),
+                        runtimeVersion: header(req, "expo-runtime-version"),
+                        expectsSignature: header(req, "expo-expect-signature") !== undefined,
+                        baseUrl: publicOrigin(req),
+                    },
+                    options.updatesPrivateKey,
+                );
+                return void res.writeHead(response.status, response.headers).end(response.body);
+            }
+            if (url.pathname.startsWith("/updates/assets/") && req.method === "GET") {
+                const asset = findAsset(update, decodeURIComponent(url.pathname.slice("/updates/assets/".length)));
+                if (!asset || !options.updatesDir) return json(res, 404, { error: "not found" });
+                res.writeHead(200, { "content-type": asset.contentType, "cache-control": "public, max-age=31536000, immutable" });
+                return void createReadStream(join(options.updatesDir, asset.path)).pipe(res);
+            }
+            if (url.pathname === "/app" && req.method === "GET") {
+                res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+                return void res.end(appPage({ apkSize: apk?.size, update }));
+            }
+            if (url.pathname === `/app/${APK_NAME}` && req.method === "GET") {
+                if (!apk) return json(res, 404, { error: "no APK in this build" });
+                res.writeHead(200, {
+                    "content-type": "application/vnd.android.package-archive",
+                    "content-length": String(apk.size),
+                    "content-disposition": `attachment; filename="${APK_NAME}"`,
+                    "cache-control": "no-cache",
+                });
+                return void createReadStream(apk.path).pipe(res);
+            }
+
             if (!isAuthorized(req, options.token)) {
                 return void res.writeHead(401, { "www-authenticate": 'Basic realm="ttm"' }).end();
             }

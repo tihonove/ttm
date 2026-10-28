@@ -9,18 +9,31 @@
     "packages/*/src/**/*.ts",
     "apps/*/src/**/*.ts",
     "!packages/sync/src/cli.ts",
-    "!apps/server/src/main.ts"
+    "!apps/server/src/main.ts",
+    "!apps/mobile/src/api.ts",
+    "!apps/mobile/src/settings.ts",
+    "!apps/mobile/src/appUpdate.ts"
   ],
   "coverageAnalysis": "perTest",
   "incrementalFile": "reports/stryker-incremental.json",
   "dryRunTimeoutMinutes": 10,
   "timeoutMS": 15000,
   "concurrency": "50%",
-  "reporters": ["html", "json", "clear-text", "progress"],
+  "reporters": [
+    "html",
+    "json",
+    "clear-text",
+    "progress"
+  ],
   "thresholds": {
     "high": 100,
     "low": 100,
     "break": 100
   },
-  "ignorePatterns": ["coverage", "reports", ".stryker-tmp", ".git"]
+  "ignorePatterns": [
+    "coverage",
+    "reports",
+    ".stryker-tmp",
+    ".git"
+  ]
 }

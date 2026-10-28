@@ -28,6 +28,7 @@ vitest сам поднимает числа, их коммитим. В CI хра
 | `packages/sync/src/cli.ts` | CLI демона |
 | (`merge-driver` — подкоманда `cli.ts`) | процесс, который запускает git; логика — `driver.ts` |
 | `apps/server/src/main.ts` | запуск сервера; логика — `server.ts` |
+| `apps/mobile/App.tsx`, `apps/mobile/src/{api,settings,appUpdate}.ts` | экраны и обёртки над нативными модулями (keystore, expo-updates) — проверяются web-сборкой и на телефоне; логика — `model.ts` |
 
 Новые исключения — только по этому же признаку. Код, который исполняет дочерний процесс, v8 не
 видит: такую логику держим в модуле, который тест зовёт напрямую (как `runDriver`).
