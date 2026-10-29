@@ -14,6 +14,7 @@ const { server, port } = await startServer(
         updatesDir: process.env.TTM_UPDATES_DIR ?? "/app/build/updates",
         updatesPrivateKey: process.env.TTM_UPDATES_PRIVATE_KEY,
         appDir: process.env.TTM_APP_DIR ?? "/app/build/app",
+        instructionsFile: process.env.TTM_INSTRUCTIONS_FILE,
         log: console.error,
     },
     Number(process.env.PORT ?? 8080),

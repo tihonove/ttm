@@ -2,7 +2,7 @@ import type { Update } from "./updates.ts";
 
 export const APK_NAME = "ttm.apk";
 
-function escape(text: string): string {
+export function escape(text: string): string {
     return text.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 }
 

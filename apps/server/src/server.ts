@@ -1,12 +1,14 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
-import { dirname, join, posix } from "node:path";
+import { dirname, join } from "node:path";
 import { serveGitHttp } from "./git-http.ts";
 import { parse, type TodoNode } from "@ttm/parser/parse";
-import { NotesRepo } from "./repo.ts";
+import { NotesRepo, safePath } from "./repo.ts";
 import { appPage, APK_NAME } from "./app-page.ts";
 import { findAsset, loadUpdate, manifestResponse } from "./updates.ts";
+import { handleMcp } from "./mcp.ts";
+import { OAuth, type Reply } from "./oauth.ts";
 
 export interface ServerOptions {
     /** Path of the bare notes repository; its parent is served over git HTTP. */
@@ -20,16 +22,19 @@ export interface ServerOptions {
     updatesPrivateKey?: string;
     /** Directory with the current ttm.apk for download. */
     appDir?: string;
+    /** Notes file with the owner's instructions for Claude, sent when a chat connects over MCP. */
+    instructionsFile?: string;
     log?: (message: string) => void;
 }
 
 export const DEFAULT_TODO_FILES = ["Diode.md", "NebiusNow.md", "Home.md"];
+export const DEFAULT_INSTRUCTIONS_FILE = "TTM.md";
 
 /** Any origin may call the API: auth is a bearer token, never a cookie. */
 const CORS_HEADERS = {
     "access-control-allow-origin": "*",
     "access-control-allow-headers": "authorization, content-type",
-    "access-control-allow-methods": "GET, PUT, OPTIONS",
+    "access-control-allow-methods": "GET, PUT, POST, OPTIONS",
     "access-control-expose-headers": "x-commit",
 };
 
@@ -101,14 +106,6 @@ function isAuthorized(req: IncomingMessage, token: string): boolean {
     return false;
 }
 
-/** Repo-relative path from user input, or undefined if it tries to escape or touch .git. */
-function safePath(raw: string | null): string | undefined {
-    if (!raw) return undefined;
-    const normalized = posix.normalize(raw).replace(/^\/+/, "");
-    if (!normalized || normalized.startsWith("..") || normalized.split("/").includes(".git")) return undefined;
-    return normalized;
-}
-
 async function readBody(req: IncomingMessage): Promise<Buffer> {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -131,6 +128,10 @@ function publicOrigin(req: IncomingMessage): string {
     return `${proto}://${header(req, "host") ?? "localhost"}`;
 }
 
+function send(res: ServerResponse, reply: Reply): void {
+    res.writeHead(reply.status, reply.headers).end(reply.body);
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
     res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
@@ -144,6 +145,12 @@ export async function startServer(options: ServerOptions, port: number): Promise
     const update = options.updatesDir ? await loadUpdate(options.updatesDir) : undefined;
     const apkPath = options.appDir ? join(options.appDir, APK_NAME) : undefined;
     const apk = apkPath && existsSync(apkPath) ? { path: apkPath, size: statSync(apkPath).size } : undefined;
+    const oauth = new OAuth(options.token, given => tokenMatches(given, options.token));
+    const mcp = {
+        repo,
+        todoFiles: options.todoFiles ?? DEFAULT_TODO_FILES,
+        instructionsFile: options.instructionsFile ?? DEFAULT_INSTRUCTIONS_FILE,
+    };
     const heartbeat = setInterval(() => events.heartbeat(), HEARTBEAT_MS);
 
     const server = createServer(async (req, res) => {
@@ -188,6 +195,49 @@ export async function startServer(options: ServerOptions, port: number): Promise
                     "cache-control": "no-cache",
                 });
                 return void createReadStream(apk.path).pipe(res);
+            }
+
+            // OAuth for claude.ai connectors; the tokens it hands out open /mcp and nothing else.
+            if (url.pathname.startsWith("/.well-known/oauth-protected-resource") && read) {
+                return send(res, oauth.resourceMetadata(publicOrigin(req)));
+            }
+            if (url.pathname === "/.well-known/oauth-authorization-server" && read) {
+                return send(res, oauth.serverMetadata(publicOrigin(req)));
+            }
+            if (url.pathname === "/oauth/register" && req.method === "POST") {
+                let body: unknown;
+                try {
+                    body = JSON.parse((await readBody(req)).toString("utf8"));
+                } catch {
+                    return json(res, 400, { error: "invalid_client_metadata" });
+                }
+                return send(res, oauth.register(body));
+            }
+            if (url.pathname === "/oauth/authorize" && read) return send(res, oauth.authorizePage(url.searchParams));
+            if (url.pathname === "/oauth/authorize" && req.method === "POST") {
+                return send(res, oauth.authorize(new URLSearchParams((await readBody(req)).toString("utf8"))));
+            }
+            if (url.pathname === "/oauth/token" && req.method === "POST") {
+                return send(res, oauth.token(new URLSearchParams((await readBody(req)).toString("utf8"))));
+            }
+
+            if (url.pathname === "/mcp") {
+                const bearer = /^Bearer (.+)$/i.exec(req.headers.authorization ?? "")?.[1] ?? "";
+                if (!oauth.isAccessToken(bearer) && !isAuthorized(req, options.token)) {
+                    const metadata = `${publicOrigin(req)}/.well-known/oauth-protected-resource`;
+                    return void res.writeHead(401, { "www-authenticate": `Bearer resource_metadata="${metadata}"` }).end();
+                }
+                if (req.method !== "POST") return void res.writeHead(405, { allow: "POST" }).end();
+                let message: unknown;
+                try {
+                    message = JSON.parse((await readBody(req)).toString("utf8"));
+                } catch {
+                    return json(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });
+                }
+                // Logged to see how often claude.ai reconnects and so rereads the instructions.
+                if ((message as { method?: unknown } | null)?.method === "initialize") log("mcp: initialize");
+                const answer = await handleMcp(message, mcp);
+                return answer ? json(res, 200, answer) : void res.writeHead(202).end();
             }
 
             if (!isAuthorized(req, options.token)) {

@@ -1,13 +1,21 @@
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { git, gitRaw, resolveRef } from "@ttm/git/git";
 import { isMergeableText, mergeText } from "@ttm/git/merge";
 
 const BRANCH_REF = "refs/heads/main";
 const ZERO_OID = "0".repeat(40);
 const MAX_WRITE_ATTEMPTS = 10;
+
+/** Repo-relative path from user input, or undefined if it tries to escape or touch .git. */
+export function safePath(raw: string | null): string | undefined {
+    if (!raw) return undefined;
+    const normalized = posix.normalize(raw).replace(/^\/+/, "");
+    if (!normalized || normalized.startsWith("..") || normalized.split("/").includes(".git")) return undefined;
+    return normalized;
+}
 
 export interface FileEntry {
     path: string;
