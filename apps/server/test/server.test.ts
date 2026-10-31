@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, it } from "vitest";
 import assert from "node:assert/strict";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { remoteUrl, runDaemon } from "../../../packages/sync/src/daemon.ts";
-import { prepareRepo, setRemote } from "../../../packages/sync/src/sync.ts";
+import { fileURLToPath } from "node:url";
 import { startServer } from "../src/server.ts";
 
 const TOKEN = "test-token";
@@ -27,7 +27,7 @@ describe("server with sync daemons", () => {
     let root: string;
     let server: Server;
     let url: string;
-    const stops: (() => void)[] = [];
+    const daemons: ChildProcess[] = [];
     const dirs: Record<string, string> = {};
 
     beforeAll(async () => {
@@ -38,18 +38,27 @@ describe("server with sync daemons", () => {
         );
         server = started.server;
         url = `http://127.0.0.1:${started.port}`;
+        // The real ttm-sync binary, set up the way a machine gets connected (see README).
+        const binary = join(root, "ttm-sync");
+        execFileSync("go", ["build", "-o", binary, "."], { cwd: fileURLToPath(new URL("../../../packages/sync", import.meta.url)) });
         for (const host of ["laptop", "desktop"]) {
             const dir = join(root, host);
             await mkdir(dir);
-            await prepareRepo({ dir, host });
-            await setRemote(dir, remoteUrl(url));
+            const env = { ...process.env, XDG_CONFIG_HOME: join(root, `config-${host}`), TTM_TOKEN: TOKEN };
+            execFileSync(binary, ["init", "--dir", dir, "--server", url, "--host", host], { env, stdio: "ignore" });
             dirs[host] = dir;
-            stops.push(runDaemon({ dir, host, server: url, token: TOKEN }, () => {}));
+            daemons.push(spawn(binary, ["run"], { env, stdio: "ignore" }));
         }
     });
 
     afterAll(async () => {
-        stops.forEach(stop => stop());
+        await Promise.all(
+            daemons.map(daemon => {
+                const exited = new Promise(resolve => daemon.once("exit", resolve));
+                daemon.kill("SIGTERM");
+                return exited;
+            }),
+        );
         server.closeAllConnections();
         await new Promise(resolve => server.close(resolve));
         await rm(root, { recursive: true, force: true });

@@ -31,7 +31,6 @@ export default defineConfig({
             // Screens are checked in the web build, not unit tests; their logic lives in model.ts.
             exclude: [
                 // Process entry points: argv/signals/exit only, the logic they call is tested directly.
-                "packages/sync/src/cli.ts",
                 "apps/server/src/main.ts",
                 "apps/mobile/src/**/*.tsx",
                 // Thin wrappers over native modules (keystore, expo-updates) and fetch.

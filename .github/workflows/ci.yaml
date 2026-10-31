@@ -21,10 +21,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/mutation/go.mod
       - run: npm ci
       - run: npm run typecheck
       # Ratchet: fails if coverage drops below the thresholds in vitest.config.ts.
       - run: npm run test:coverage -- --coverage.thresholds.autoUpdate=false
+      - run: npm run test:go
+      - run: npm run test:coverage:go -- --check
 
   # Mutation gate on the PR diff only; the nightly workflow covers everything.
   mutation:
@@ -40,6 +45,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/mutation/go.mod
       - run: npm ci
       - uses: actions/cache@v4
         with:

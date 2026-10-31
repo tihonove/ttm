@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Packs the binaries from build-sea.ts into dist/ttm-sync_<version>_{amd64,arm64}.deb.
+// Packs the binaries from build-bin.ts into dist/ttm-sync_<version>_{amd64,arm64}.deb.
 //
 //   node scripts/build-deb.ts --version 1.2.3 [--arch x64,arm64]
 //
@@ -20,7 +20,7 @@ const { values } = parseArgs({
     },
 });
 const version = values.version;
-// Debian versions must start with a digit; build-sea.ts defaults to "dev", which would not do.
+// Debian versions must start with a digit; build-bin.ts defaults to "dev", which would not do.
 if (!version || !/^\d[0-9A-Za-z.+~-]*$/.test(version)) throw new Error(`--version must be a Debian version, got ${version}`);
 
 for (const target of values.arch!.split(",")) {
@@ -41,8 +41,8 @@ for (const target of values.arch!.split(",")) {
         `Architecture: ${debArch}`,
         "Maintainer: Eugene Tihonov <tihonov.ea@gmail.com>",
         `Installed-Size: ${Math.ceil(statSync(binary).size / 1024)}`,
-        // The embedded node is the official build: glibc >= 2.28 and the system libstdc++.
-        "Depends: git, libc6 (>= 2.28), libstdc++6",
+        // The binary is static; git is the only thing it runs.
+        "Depends: git",
         "Section: utils",
         "Priority: optional",
         "Homepage: https://github.com/tihonove/ttm",

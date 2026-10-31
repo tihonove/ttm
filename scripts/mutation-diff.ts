@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Mutation gate on a diff: mutates only the lines changed against a base, then judges the
-// mutants of that scope itself. See docs/TESTING.md.
+// Mutation gate on a diff: mutates only the lines changed against a base (TypeScript with Stryker,
+// Go with go-mutesting), then judges the mutants of that scope itself. See docs/TESTING.md.
 //
 //   npm run test:mutation                    diff against the merge-base with origin/main
 //   npm run test:mutation -- --base <ref>    another base
@@ -8,7 +8,8 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { addWholeFiles, formatGate, gatePassed, judge, mutateArgs, mutateFilter, scopeFromDiff, type MutationReport } from "./mutation-scope.ts";
+import { runGoMutation } from "./mutation-go.ts";
+import { acceptGo, addWholeFiles, formatGate, gatePassed, judge, mutateArgs, mutateFilter, scopeFromDiff, type MutationReport, type Scope } from "./mutation-scope.ts";
 
 const REPORT = "reports/mutation/mutation.json";
 const GATE = "reports/mutation/gate.md";
@@ -36,31 +37,43 @@ function resolveBase(): string {
 }
 
 const config = JSON.parse(readFileSync("stryker.config.json", "utf8")) as { mutate: string[]; thresholds: { break: number } };
-const accept = mutateFilter(config.mutate);
+const acceptTs = mutateFilter(config.mutate);
+const accept = (path: string) => acceptTs(path) || acceptGo(path);
 const base = resolveBase();
 // Working tree against the base, so uncommitted edits count too; untracked files are new files.
 const scope = scopeFromDiff(git(["diff", "-U0", "--no-color", "--no-ext-diff", base]).out, accept);
 addWholeFiles(scope, git(["ls-files", "--others", "--exclude-standard"]).out.split("\n").filter(p => p && accept(p)));
 
-const mutate = mutateArgs(scope);
+const only = (filter: (path: string) => boolean): Scope => new Map([...scope].filter(([path]) => filter(path)));
+const tsScope = only(acceptTs);
+const goScope = only(acceptGo);
+
 mkdirSync("reports/mutation", { recursive: true });
-if (mutate.length === 0) {
+if (scope.size === 0) {
     console.log("mutation: empty scope, nothing to mutate");
     writeFileSync(GATE, "### Mutation gate: empty scope\n");
     process.exit(0);
 }
-console.error(`mutation: scope\n  ${mutate.join("\n  ")}`);
+console.error(`mutation: scope\n  ${mutateArgs(scope).join("\n  ")}`);
 if (values["scope-only"]) process.exit(0);
 
-const started = Date.now();
-// Stryker's own exit code also reflects stale incremental results outside the scope: ignored.
-spawnSync("npx", ["stryker", "run", "--incremental", "--mutate", mutate.join(",")], { stdio: "inherit" });
-if ((statSync(REPORT, { throwIfNoEntry: false })?.mtimeMs ?? 0) < started) {
-    console.error(`mutation: Stryker did not write a fresh ${REPORT}`);
-    writeFileSync(GATE, "### Mutation gate: error\n\nStryker did not produce a report.\n");
+function fail(message: string): never {
+    console.error(`mutation: ${message}`);
+    writeFileSync(GATE, `### Mutation gate: error\n\n${message}\n`);
     process.exit(1);
 }
-const result = judge(JSON.parse(readFileSync(REPORT, "utf8")) as MutationReport, scope);
+
+const report: MutationReport = { files: {} };
+if (tsScope.size > 0) {
+    const started = Date.now();
+    // Stryker's own exit code also reflects stale incremental results outside the scope: ignored.
+    spawnSync("npx", ["stryker", "run", "--incremental", "--mutate", mutateArgs(tsScope).join(",")], { stdio: "inherit" });
+    if ((statSync(REPORT, { throwIfNoEntry: false })?.mtimeMs ?? 0) < started) fail(`Stryker did not write a fresh ${REPORT}`);
+    Object.assign(report.files, (JSON.parse(readFileSync(REPORT, "utf8")) as MutationReport).files);
+}
+if (goScope.size > 0) Object.assign(report.files, (await runGoMutation(goScope)).files);
+
+const result = judge(report, scope);
 const summary = formatGate(result, config.thresholds.break);
 writeFileSync(GATE, summary);
 console.log(summary);

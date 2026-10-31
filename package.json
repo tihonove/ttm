@@ -14,19 +14,18 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:mutation": "node scripts/mutation-diff.ts",
-    "test:mutation:full": "stryker run --incremental",
+    "test:mutation:full": "stryker run --incremental; code=$?; node scripts/mutation-go.ts && exit $code",
+    "test:go": "go -C packages/sync test -race ./...",
+    "test:coverage:go": "node scripts/coverage-go.ts",
     "typecheck": "tsc",
-    "build:sea": "node scripts/build-sea.ts",
+    "build:bin": "node scripts/build-bin.ts",
     "build:deb": "node scripts/build-deb.ts"
   },
   "devDependencies": {
     "@stryker-mutator/core": "^10.1.1",
     "@stryker-mutator/vitest-runner": "^10.1.1",
     "@types/node": "^24.0.0",
-    "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^4.1.12",
-    "esbuild": "^0.27.7",
-    "postject": "^1.0.0-alpha.6",
     "typescript": "^5.9.0",
     "vitest": "^4.1.12"
   }

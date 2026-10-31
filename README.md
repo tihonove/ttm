@@ -5,8 +5,8 @@
 
 | Путь | Что |
 |---|---|
-| `packages/git` | обёртка над git и 3-way merge текста без конфликтов |
-| `packages/sync` | демон `ttm-sync`: watcher → commit → fetch/merge → push, merge-драйвер |
+| `packages/git` | обёртка над git и 3-way merge текста без конфликтов (для сервера) |
+| `packages/sync` | демон `ttm-sync` на Go: watcher → commit → fetch/merge → push, merge-драйвер |
 | `apps/server` | bare-репо заметок, git smart HTTP, SSE `/events`, API `/api/files`, `/api/file` |
 | `deploy/` | kustomize-манифесты для кластера (Flux) |
 
@@ -35,7 +35,10 @@ journalctl --user -u ttm-sync -f
 ```
 
 Обновления — обычный `apt upgrade`: он подменяет бинарь, демон замечает это и перезапускается через systemd.
-Из исходников — то же самое через `node packages/sync/src/cli.ts`.
+Из исходников — то же самое через `go -C packages/sync run . <команда>`.
+
+Машина со старой версией на Node из `~/.local/bin`: `apt upgrade` её не заменит, юнит указывает на старый
+путь. Поставить пакет, выполнить `/usr/bin/ttm-sync install` и удалить `~/.local/bin/ttm-sync`.
 
 ## Релиз
 
@@ -43,15 +46,17 @@ journalctl --user -u ttm-sync -f
 scripts/release          # v0.1.0 → v0.1.1; minor | major | 0.4.2; -n — посмотреть, что выйдет
 ```
 
-Скрипт ставит тег `vX.Y.Z`, workflow `release` гоняет тесты, собирает бинари (`npm run build:sea`) и
+Скрипт ставит тег `vX.Y.Z`, workflow `release` гоняет тесты, собирает статические бинари (`npm run build:bin`) и
 `ttm-sync_X.Y.Z_{amd64,arm64}.deb` (`npm run build:deb`) в GitHub Release; потом скрипт запускает
 `publish` в [tihonove/apt](https://github.com/tihonove/apt), и пакет появляется в apt.
 
 ## Разработка
 
 ```bash
-npm test          # node --test, включая fuzz-синк трёх машин и e2e с сервером
+npm test          # vitest: сервер, парсер
+npm run test:go   # ttm-sync, включая fuzz-синк трёх машин
 npm run typecheck
 ```
 
-Node ≥ 24 запускает `.ts` напрямую, сборки нет.
+Node ≥ 24 запускает `.ts` напрямую, сборки нет. `ttm-sync` — на Go. Алгоритм слияния есть и там, и в
+сервере; обе реализации сверяются по `packages/git/test/merge-corpus.json`.

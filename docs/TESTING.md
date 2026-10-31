@@ -8,9 +8,12 @@ npm run test:mutation -- --scope-only         # только показать, �
 npm run test:mutation -- --base <ref>         # другая база диффа
 claude-lease run -- npm run test:mutation:full  # весь код (так гоняет ночной CI)
 npm run typecheck
+npm run test:go                               # go test -race для ttm-sync
+npm run test:coverage:go                      # храповик покрытия Go
 ```
 
-Перед сдачей фичи — все три: `typecheck`, `test:coverage`, `test:mutation`. Покрытие говорит «строка
+Перед сдачей фичи — `typecheck`, `test:coverage`, `test:mutation`; если менялся `packages/sync` — ещё
+`test:go` и `test:coverage:go`. Покрытие говорит «строка
 исполнилась», мутационный балл — «кто-то её проверил»; одно без другого даёт ложное зелёное.
 Подход тот же, что в diode (`~/workspace/diode/docs/MUTATION.md`), в уменьшенном виде.
 
@@ -25,15 +28,21 @@ vitest сам поднимает числа, их коммитим. В CI хра
 
 | Файл | Почему |
 |---|---|
-| `packages/sync/src/cli.ts` | CLI демона |
-| (`merge-driver` — подкоманда `cli.ts`) | процесс, который запускает git; логика — `driver.ts` |
+| `packages/sync/main.go` | CLI демона; логика — `packages/sync/internal`, включая `merge-driver` |
 | `apps/server/src/main.ts` | запуск сервера; логика — `server.ts` |
 | `apps/mobile/App.tsx`, `apps/mobile/src/{api,settings,appUpdate}.ts` | экраны и обёртки над нативными модулями (keystore, expo-updates) — проверяются web-сборкой и на телефоне; логика — `model.ts` |
 
 Новые исключения — только по этому же признаку. Код, который исполняет дочерний процесс, v8 не
-видит: такую логику держим в модуле, который тест зовёт напрямую (как `runDriver`).
+видит: такую логику держим в модуле, который тест зовёт напрямую.
+
+Go считает `scripts/coverage-go.ts` по `internal/...`: тот же храповик, планка лежит в
+`packages/sync/coverage-threshold.txt`, CI только проверяет (`--check`).
 
 ## Мутационное тестирование
+
+TypeScript проверяет Stryker, Go (`packages/sync`) — [go-mutesting](https://github.com/avito-tech/go-mutesting)
+из отдельного модуля `tools/mutation`. Гейт, скоуп по диффу и порог общие; разница в механике описана
+в разделе «Go» ниже.
 
 [`stryker.config.json`](../stryker.config.json): vitest-раннер, `perTest`, порог `break: 100`.
 Мутируется `src` кроме тех же точек входа.
@@ -67,6 +76,27 @@ vitest сам поднимает числа, их коммитим. В CI хра
 Workspace-пакеты (`@ttm/git/*`) vitest резолвит в исходники рядом с конфигом, а не через
 симлинки `node_modules`: в песочнице Stryker'а симлинки вели бы в оригинальные, немутированные файлы,
 и мутанты `packages/git` «выживали» бы в тестах других пакетов.
+
+### Go
+
+[`scripts/mutation-go.ts`](../scripts/mutation-go.ts) гоняет каждый файл в своей временной копии модуля
+(рабочее дерево не трогается, файлы идут параллельно), а `tools/mutation/exec.sh` решает судьбу мутанта:
+вне скоупа диффа или не компилируется — пропуск, иначе `go test` его пакета. Поэтому мутант в коде
+должен падать на тестах **своего** пакета. Отчёт переводится в формат Stryker и попадает в тот же гейт.
+
+Эквивалентного мутанта гасим так же, комментарием с причиной:
+
+```go
+// при n == 0 обе ветки возвращают пустой список
+// mutator-disable-next-line expression/remove
+```
+
+Причина — отдельной строкой: go-mutesting считает именем мутатора всё после аннотации, и с хвостом она
+молча не сработает. Несколько мутаторов перечисляются через запятую.
+
+`tools/mutation/osutil` — заглушка вместо `zimmski/osutil`: настоящий модуль не собирается на linux/arm64.
+
+### Отчёт
 
 Отчёт — `reports/mutation/mutation.html`. Прогон тяжёлый (тесты гоняют настоящий git) — только под
 `claude-lease`.
