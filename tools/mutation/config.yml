@@ -1,0 +1,5 @@
+# Files are tested from any _test.go of their package, not only a same-named one.
+skip_without_test: false
+skip_with_build_tags: false
+json_output: true
+silent_mode: true

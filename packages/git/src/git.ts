@@ -24,7 +24,6 @@ export function gitRaw(cwd: string, args: string[], options: GitOptions = {}): P
         const child = spawn("git", args, {
             cwd,
             env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", ...options.env },
-            stdio: ["pipe", "pipe", "pipe"],
         });
         const out: Buffer[] = [];
         const err: Buffer[] = [];
@@ -50,16 +49,4 @@ export async function git(cwd: string, args: string[], options: GitOptions = {})
 export async function resolveRef(cwd: string, ref: string): Promise<string | undefined> {
     const result = await gitRaw(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
     return result.code === 0 ? result.stdout.toString("utf8").trim() : undefined;
-}
-
-/** Passes config to a single git invocation via env, so nothing (e.g. a token) lands in .git/config. */
-export function configEnv(entries: Record<string, string>): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = {};
-    const pairs = Object.entries(entries);
-    env.GIT_CONFIG_COUNT = String(pairs.length);
-    pairs.forEach(([key, value], i) => {
-        env[`GIT_CONFIG_KEY_${i}`] = key;
-        env[`GIT_CONFIG_VALUE_${i}`] = value;
-    });
-    return env;
 }

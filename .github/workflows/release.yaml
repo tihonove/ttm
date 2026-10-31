@@ -17,6 +17,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/sync/go.mod
       - id: version
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -26,8 +29,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      # The embedded node needs only glibc >= 2.28, so one package serves every Ubuntu release.
-      - run: npm run build:sea -- --version ${{ steps.version.outputs.version }}
+      - run: npm run test:go
+      # The binary is static, so one package serves every Ubuntu release.
+      - run: npm run build:bin -- --version ${{ steps.version.outputs.version }}
       - run: npm run build:deb -- --version ${{ steps.version.outputs.version }}
       - run: gh release create "$GITHUB_REF_NAME" dist/*.deb --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
         env:

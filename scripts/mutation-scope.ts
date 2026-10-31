@@ -18,6 +18,11 @@ export function mutateFilter(mutate: string[]): (path: string) => boolean {
         !exclude.some(glob => matchesGlob(path, glob));
 }
 
+/** Go code under mutation: as in TypeScript, everything but the process entry point. */
+export function acceptGo(path: string): boolean {
+    return path.startsWith("packages/sync/internal/") && path.endsWith(".go") && !path.endsWith("_test.go");
+}
+
 /** A line whose change cannot alter behaviour, so it does not pull its hunk into the scope. */
 function isInert(line: string): boolean {
     const text = line.trim();
@@ -159,4 +164,47 @@ export function formatGate(result: GateResult, threshold: number): string {
 
 export function gatePassed(result: GateResult, threshold: number): boolean {
     return result.score >= threshold && result.blocking.length === 0;
+}
+
+export interface GoMutant {
+    mutator: { mutatorName: string; originalSourceCode: string; mutatedSourceCode: string; originalFilePath: string };
+}
+
+export interface GoReport {
+    killed: GoMutant[] | null;
+    escaped: GoMutant[] | null;
+    timeouted: GoMutant[] | null;
+    errored: GoMutant[] | null;
+}
+
+/** First line where the mutant differs from the source: go-mutesting's own line can be a whole block's. */
+function firstChange(original: string, mutated: string): { line: number; replacement: string } {
+    const before = original.split("\n");
+    const after = mutated.split("\n");
+    let i = 0;
+    while (i < before.length && i < after.length && before[i] === after[i]) i++;
+    return { line: i + 1, replacement: (after[i] ?? "").trim() };
+}
+
+/** Puts one go-mutesting report into Stryker's shape, so one gate judges both. */
+export function fromGoReport(go: GoReport, file: string): MutationReport {
+    const groups: [GoMutant[] | null, string][] = [
+        [go.killed, "Killed"],
+        [go.timeouted, "Timeout"],
+        [go.escaped, "Survived"],
+        [go.errored, "RuntimeError"],
+    ];
+    const mutants = groups.flatMap(([group, status]) =>
+        (group ?? []).map((mutant, i): ReportMutant => {
+            const { line, replacement } = firstChange(mutant.mutator.originalSourceCode, mutant.mutator.mutatedSourceCode);
+            return {
+                id: `${status}-${i}`,
+                mutatorName: mutant.mutator.mutatorName,
+                replacement,
+                status,
+                location: { start: { line, column: 1 } },
+            };
+        }),
+    );
+    return { files: { [file]: { mutants } } };
 }

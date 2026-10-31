@@ -72,7 +72,7 @@ function diff(base: string[], side: string[]): Hunk[] | undefined {
             current ??= { start: prefix + i, end: prefix + i, lines: [] };
             current.lines.push(b[j++]!);
         } else {
-            current ??= { start: prefix + i, end: prefix + i, lines: [] };
+            current ??= { start: prefix + i, end: 0, lines: [] };
             current.end = prefix + ++i;
         }
     }
@@ -107,7 +107,7 @@ function mergeLines(base: string[], ours: Hunk[], theirs: Hunk[]): string[] {
     const tagged = [
         ...ours.map(hunk => ({ hunk, side: 0 as const })),
         ...theirs.map(hunk => ({ hunk, side: 1 as const })),
-    ].sort((x, y) => x.hunk.start - y.hunk.start || x.hunk.end - y.hunk.end || x.side - y.side);
+    ].sort((x, y) => x.hunk.start - y.hunk.start || x.hunk.end - y.hunk.end);
 
     const out: string[] = [];
     let pos = 0;
@@ -150,7 +150,7 @@ async function gitUnionMerge(base: string, ours: string, theirs: string): Promis
         if (result.code >= 128 || result.code < 0) throw new Error(`git merge-file failed: ${result.stderr}`);
         return result.stdout;
     } finally {
-        await rm(dir, { recursive: true, force: true });
+        await rm(dir, { recursive: true });
     }
 }
 
