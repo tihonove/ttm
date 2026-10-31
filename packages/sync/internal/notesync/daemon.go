@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -213,10 +214,11 @@ var eventsClient = &http.Client{Transport: &http.Transport{
 // parseHeadEvent returns the head of an SSE message, ok=false when it is another kind of message.
 // A nil head means the branch does not exist on the server yet.
 func parseHeadEvent(message string) (head *string, ok bool, err error) {
-	if !strings.Contains(message, "event: head") {
+	lines := strings.Split(message, "\n")
+	if !slices.Contains(lines, "event: head") {
 		return nil, false, nil
 	}
-	for _, line := range strings.Split(message, "\n") {
+	for _, line := range lines {
 		if data, found := strings.CutPrefix(line, "data:"); found {
 			var payload struct {
 				Head *string `json:"head"`
