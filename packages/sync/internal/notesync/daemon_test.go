@@ -91,6 +91,9 @@ func TestParseHeadEvent(t *testing.T) {
 	if _, ok, err := parseHeadEvent("event: other\ndata: {\"head\":\"abc\"}"); ok || err != nil {
 		t.Fatalf("another event: %t %v", ok, err)
 	}
+	if _, ok, err := parseHeadEvent("event: headless\ndata: {\"head\":\"abc\"}"); ok || err != nil {
+		t.Fatalf("an event merely starting with head: %t %v", ok, err)
+	}
 	if _, ok, err := parseHeadEvent(": ping"); ok || err != nil {
 		t.Fatalf("ping: %t %v", ok, err)
 	}

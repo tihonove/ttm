@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import assert from "node:assert/strict";
-import { acceptGo, formatGate, fromGoReport, gatePassed, judge, type GoMutant, type Scope } from "./mutation-scope.ts";
+import { acceptGo, formatGate, fromGoReport, gatePassed, judge, withFollowingLine, type GoMutant, type Scope } from "./mutation-scope.ts";
 
 const FILE = "packages/sync/internal/merge/merge.go";
 
@@ -14,6 +14,14 @@ describe("acceptGo", () => {
         assert.equal(acceptGo("packages/sync/internal/merge/merge_test.go"), false);
         assert.equal(acceptGo("packages/sync/main.go"), false);
         assert.equal(acceptGo("tools/mutation/osutil/copy.go"), false);
+    });
+});
+
+describe("withFollowingLine", () => {
+    it("takes in the line after each changed range, where a mutant of an edited if lands", () => {
+        const scope: Scope = new Map([[FILE, { whole: false, ranges: [[3, 4], [9, 9]] as [number, number][] }]]);
+        assert.deepEqual(withFollowingLine(scope).get(FILE)?.ranges, [[3, 5], [9, 10]]);
+        assert.deepEqual(scope.get(FILE)?.ranges, [[3, 4], [9, 9]]);
     });
 });
 
