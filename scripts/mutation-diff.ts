@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { runGoMutation } from "./mutation-go.ts";
-import { acceptGo, addWholeFiles, formatGate, gatePassed, judge, mutateArgs, mutateFilter, scopeFromDiff, type MutationReport, type Scope } from "./mutation-scope.ts";
+import { acceptGo, addWholeFiles, formatGate, gatePassed, judge, withFollowingLine, mutateArgs, mutateFilter, scopeFromDiff, type MutationReport, type Scope } from "./mutation-scope.ts";
 
 const REPORT = "reports/mutation/mutation.json";
 const GATE = "reports/mutation/gate.md";
@@ -41,12 +41,13 @@ const acceptTs = mutateFilter(config.mutate);
 const accept = (path: string) => acceptTs(path) || acceptGo(path);
 const base = resolveBase();
 // Working tree against the base, so uncommitted edits count too; untracked files are new files.
-const scope = scopeFromDiff(git(["diff", "-U0", "--no-color", "--no-ext-diff", base]).out, accept);
+// The prefixes are set because diff.mnemonicPrefix and diff.noprefix in a user's config change them.
+const scope = scopeFromDiff(git(["diff", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", base]).out, accept);
 addWholeFiles(scope, git(["ls-files", "--others", "--exclude-standard"]).out.split("\n").filter(p => p && accept(p)));
 
 const only = (filter: (path: string) => boolean): Scope => new Map([...scope].filter(([path]) => filter(path)));
 const tsScope = only(acceptTs);
-const goScope = only(acceptGo);
+const goScope = withFollowingLine(only(acceptGo));
 
 mkdirSync("reports/mutation", { recursive: true });
 if (scope.size === 0) {
@@ -73,7 +74,7 @@ if (tsScope.size > 0) {
 }
 if (goScope.size > 0) Object.assign(report.files, (await runGoMutation(goScope)).files);
 
-const result = judge(report, scope);
+const result = judge(report, new Map([...tsScope, ...goScope]));
 const summary = formatGate(result, config.thresholds.break);
 writeFileSync(GATE, summary);
 console.log(summary);

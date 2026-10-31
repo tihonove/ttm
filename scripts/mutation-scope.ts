@@ -122,6 +122,16 @@ function inScope(scope: Scope, file: string, line: number): boolean {
  * Judges only mutants inside the scope: an incremental Stryker run also carries old results for
  * code outside it, which must not decide this diff.
  */
+/**
+ * go-mutesting's branch mutators change the body, so a mutant of an edited `if` lands on the line after
+ * it, which may well be unchanged: each range takes that line in too.
+ */
+export function withFollowingLine(scope: Scope): Scope {
+    return new Map(
+        [...scope].map(([file, entry]) => [file, { ...entry, ranges: entry.ranges.map(([start, end]): [number, number] => [start, end + 1]) }]),
+    );
+}
+
 export function judge(report: MutationReport, scope: Scope): GateResult {
     const counts: Record<string, number> = {};
     const blocking: ScopedMutant[] = [];
